@@ -1,0 +1,12 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart
+websockets
+# Pin numpy to avoid 2.0 breaking changes with audio libs
+numpy==1.26.4 
+scipy
+torch==2.4.0 --index-url https://download.pytorch.org/whl/cu124
+torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
+rvc-python==0.1.2
+faiss-gpu
+fairseq
