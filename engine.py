@@ -86,7 +86,7 @@ class RVCEngine:
         self.rvc.infer_file(
             input_path=input_path,
             output_path=output_path,
-            f0_method=settings.F0_METHOD,
+            algorithm=settings.F0_METHOD,
             f0_up_key=settings.F0_UP_KEY,
             index_rate=settings.INDEX_RATE,
             filter_radius=settings.FILTER_RADIUS,
