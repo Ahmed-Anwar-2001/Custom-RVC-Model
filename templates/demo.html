@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS -> RVC (Google Fix)</title>
+    <style>
+        body { font-family: sans-serif; background: #1e1e1e; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .box { background: #2d2d2d; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 400px; text-align: center; }
+        input { width: 90%; padding: 12px; border-radius: 6px; border: 1px solid #444; background: #111; color: white; margin-bottom: 1rem; }
+        button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem; font-weight: bold; width: 100%; transition: background 0.2s; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .status { margin-top: 1rem; font-size: 0.9rem; color: #aaa; min-height: 20px; }
+        .loader { display: inline-block; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; border-top-color: transparent; animation: spin 1s linear infinite; display: none; margin-left: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="box">
+        <h2>🗣️ Google TTS -> RVC</h2>
+        <input type="text" id="TextInput" value="Hello, this is a test of the RVC system." placeholder="Type something...">
+        <button id="BtnConvert" onclick="runPipeline()">
+            Speak & Convert <div class="loader" id="Loader"></div>
+        </button>
+        <div class="status" id="Status">Connecting to RVC...</div>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        const RVC_WS_URL = "ws://66.92.198.242:11957/ws/convert";
+        
+        let ws;
+        let isReady = false;
+
+        // 1. Initialize WebSocket
+        function initWebSocket() {
+            ws = new WebSocket(RVC_WS_URL);
+
+            ws.onopen = () => {
+                isReady = true;
+                updateStatus("✅ Connected to RVC Server");
+            };
+
+            ws.onmessage = async (event) => {
+                updateStatus("✨ Audio Received! Playing...");
+                toggleLoader(false);
+                
+                // Play the resulting Blob
+                const blob = event.data;
+                const audioUrl = URL.createObjectURL(blob);
+                const audio = new Audio(audioUrl);
+                audio.play();
+            };
+
+            ws.onclose = () => {
+                isReady = false;
+                updateStatus("❌ Disconnected. Refreshing...");
+                setTimeout(initWebSocket, 3000); // Auto-reconnect
+            };
+
+            ws.onerror = (err) => {
+                console.error(err);
+                updateStatus("⚠️ Connection Error");
+                toggleLoader(false);
+            };
+        }
+
+        // 2. The Main Pipeline
+        async function runPipeline() {
+            const text = document.getElementById('TextInput').value;
+            if (!text) return;
+            if (!isReady) { alert("RVC Server not connected yet."); return; }
+
+            toggleLoader(true);
+            updateStatus("⏳ Fetching Google TTS...");
+
+            try {
+                // Step A: Construct Google TTS URL
+                // client=tw-ob is the key to accessing the public API
+                const googleUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=${encodeURIComponent(text)}`;
+                
+                // Step B: Use CORS Proxy to fetch it
+                // We use corsproxy.io to avoid the "Cross-Origin" block
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(googleUrl)}`;
+                
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) throw new Error(`TTS Fetch Failed: ${response.status}`);
+                
+                const ttsBlob = await response.blob();
+
+                // Step C: Send Blob to RVC WebSocket
+                updateStatus("🚀 Converting Voice (RVC)...");
+                ws.send(ttsBlob);
+
+            } catch (error) {
+                console.error(error);
+                updateStatus("❌ Error: " + error.message);
+                toggleLoader(false);
+            }
+        }
+
+        function updateStatus(msg) { document.getElementById('Status').innerText = msg; }
+        function toggleLoader(show) { document.getElementById('Loader').style.display = show ? "inline-block" : "none"; document.getElementById('BtnConvert').disabled = show; }
+
+        // Start
+        initWebSocket();
+    </script>
+</body>
+</html>
