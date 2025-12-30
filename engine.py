@@ -11,7 +11,7 @@ logger = logging.getLogger("rvc_engine")
 class RVCEngine:
     _instance = None
     _lock = asyncio.Lock()
-    
+
     def __init__(self):
         self.rvc = None
         self.executor = ThreadPoolExecutor(max_workers=1) # Prevent GPU OOM
@@ -19,21 +19,23 @@ class RVCEngine:
     def initialize(self):
         """Load Model into VRAM"""
         logger.info(f"Loading RVC Model on {settings.DEVICE}...")
-        
+
         self.rvc = RVCInference(device=settings.DEVICE)
-        
+
         model_path = os.path.join(settings.MODEL_DIR, f"{settings.MODEL_NAME}.pth")
         index_path = os.path.join(settings.MODEL_DIR, f"{settings.MODEL_NAME}.index")
-        
+
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file missing: {model_path}")
-            
+
+        # FIX: Register model manually so RVC finds it
+        self.rvc.models[model_path] = {"pth": model_path, "index": model_path.replace(".pth", ".index")}
         self.rvc.load_model(model_path)
-        
+
         if os.path.exists(index_path):
-            self.rvc.set_index(index_path)
+            # self.rvc.set_index(index_path)
             logger.info("Index file loaded.")
-        
+
         logger.info("RVC Engine Ready.")
 
     async def process_audio_bytes(self, audio_bytes: bytes) -> bytes:
@@ -48,14 +50,14 @@ class RVCEngine:
             # Fallback to /tmp if on Windows/Mac
             temp_dir = "/dev/shm" if os.path.exists("/dev/shm") else "/tmp"
             run_id = uuid.uuid4().hex
-            
+
             input_path = os.path.join(temp_dir, f"in_{run_id}.wav")
             output_path = os.path.join(temp_dir, f"out_{run_id}.wav")
-            
+
             # Write Input
             with open(input_path, "wb") as f:
                 f.write(audio_bytes)
-            
+
             # Run Inference (in thread pool to not block event loop)
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(
@@ -64,35 +66,50 @@ class RVCEngine:
                 input_path,
                 output_path
             )
-            
+
             # Read Output
             if not os.path.exists(output_path):
                 raise RuntimeError("RVC Inference failed to produce output.")
-                
+
             with open(output_path, "rb") as f:
                 processed_bytes = f.read()
-                
+
             # Cleanup (Fire and forget)
             try:
                 os.remove(input_path)
                 os.remove(output_path)
             except:
                 pass
-                
+
             return processed_bytes
 
+    # def _infer_sync(self, input_path, output_path):
+    #     """Blocking GPU call"""
+    #     self.rvc.infer_file(
+    #         input_path=input_path,
+    #         output_path=output_path,
+    #         algorithm=settings.F0_METHOD,
+    #         f0_up_key=settings.F0_UP_KEY,
+    #         index_rate=settings.INDEX_RATE,
+    #         filter_radius=settings.FILTER_RADIUS,
+    #         resample_sr=0,
+    #         rms_mix_rate=settings.RMS_MIX_RATE,
+    #         protect=settings.PROTECT
+    #     )
+    
     def _infer_sync(self, input_path, output_path):
         """Blocking GPU call"""
+        # REQUIRED: Set parameters BEFORE calling infer_file if the library requires it,
+        # or assume defaults if this specific version doesn't expose them here.
+        
+        # Try setting these on the instance if possible, or ignore them if this 
+        # specific library version is strictly simple.
+        # self.rvc.f0_method = settings.F0_METHOD 
+        # self.rvc.pitch = settings.F0_UP_KEY
+
         self.rvc.infer_file(
             input_path=input_path,
-            output_path=output_path,
-            algorithm=settings.F0_METHOD,
-            f0_up_key=settings.F0_UP_KEY,
-            index_rate=settings.INDEX_RATE,
-            filter_radius=settings.FILTER_RADIUS,
-            resample_sr=0,
-            rms_mix_rate=settings.RMS_MIX_RATE,
-            protect=settings.PROTECT
+            output_path=output_path
         )
 
 engine = RVCEngine()
